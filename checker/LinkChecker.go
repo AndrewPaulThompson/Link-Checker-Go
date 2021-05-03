@@ -47,28 +47,44 @@ func check(host string) {
 	}
 
 	// Get links from the html node
-	links := getLinks(node)
-
-	// Check the status for each link
-	checkedLinks := checkLinks(links, hostURL)
-
-	// Print out link status
-	for _, res := range checkedLinks {
-		fmt.Printf("[%d] - %s\n", res.status, res.link)
-	}
-}
-
-// GetLinks gets the link nodes for a given *html.Node
-func getLinks(node *html.Node) []string {
 	links := make([]string, 0)
 	getAnchorLinks(node, &links)
-	return links
+
+	// Check the status for each link
+	parsedLinks := parseLinks(links, hostURL)
+	ch := make(chan Response)
+
+	for _, link := range parsedLinks {
+		go checkLink(link, ch)
+	}
+
+	results := make(map[int]int)
+	for range parsedLinks {
+		res := <-ch
+		if _, ok := results[res.status]; ok {
+			results[res.status]++
+		} else {
+			results[res.status] = 1
+		}
+
+		fmt.Printf("[%d] - %s\n", res.status, res.link)
+	}
+
+	fmt.Println(results)
 }
 
-// CheckLinks takes a slice of strings (links), and attempts to do a http.Get on each
+func checkLink(link string, ch chan<- Response) {
+	resp, err := http.Get(link)
+	if err != nil {
+		fmt.Println(err)
+	}
+	ch <- Response{resp.StatusCode, link}
+}
+
+// ParseLinks takes a slice of strings (anchor tag hrefs), and converts them into fully qualified links
 // Because the href attribute of an <a> tag can have many values
 // there is a lot of logic in here to determine what we should do
-// We currently handle:
+// Handles:
 // - absolute links
 // - absolute links with no scheme
 // - no links (empty string)
@@ -77,8 +93,9 @@ func getLinks(node *html.Node) []string {
 // - id link (#)
 // - email link (mailto:)
 // - javascript link (javascript:)
-func checkLinks(links []string, host *url.URL) []Response {
-	checkedLinks := make([]Response, 0)
+func parseLinks(links []string, host *url.URL) []string {
+	parsedLinks := make([]string, 0)
+
 	for _, a := range links {
 		if len(a) > 1 {
 			// URL encode spaces
@@ -91,6 +108,7 @@ func checkLinks(links []string, host *url.URL) []Response {
 				if string(a[0]) == "#" {
 					continue
 				}
+
 				// Assume the link is relative (no slash)
 				a = fmt.Sprintf("%s/%s", host, a)
 			}
@@ -102,19 +120,18 @@ func checkLinks(links []string, host *url.URL) []Response {
 				if string(a[1]) == "/" {
 					a = host.Scheme + ":" + a
 				} else {
-					a = host.Host + a
+					a = host.Scheme + "://" + host.Host + a
 				}
 			}
 
-			resp, err := http.Get(a)
-			if err != nil {
+			if strings.HasPrefix(a, "mailto:") || strings.HasPrefix(a, "javascript:") {
 				continue
 			}
 
-			checkedLinks = append(checkedLinks, Response{resp.StatusCode, a})
+			parsedLinks = append(parsedLinks, a)
 		}
 	}
-	return checkedLinks
+	return parsedLinks
 }
 
 // GetAnchorLinks gets the <a> tags from a html node

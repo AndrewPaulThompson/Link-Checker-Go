@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-var HOST_URL, _ = url.Parse("www.example.com")
+var HOST_URL, _ = url.Parse("http://www.example.com")
 
 var linkMap = map[string]string{
 	"ABSOLUTE_LINK":          "http://example.com",
@@ -19,26 +19,16 @@ var linkMap = map[string]string{
 	"JAVASCRIPT_LINK":        "javascript:alert('Hello');",
 }
 
-func TestCheckLinks(t *testing.T) {
+func TestParseLinks(t *testing.T) {
 	links := make([]string, 0)
 	for _, link := range linkMap {
 		links = append(links, link)
 	}
-	checkLinks(links, HOST_URL)
-}
 
-func TestGetLinks(t *testing.T) {
-	node, err := getHTMLNode(mock_getHTMLBody, HOST_URL)
-	if err != nil {
-		t.Errorf("Failed to get *html.Node, got error %v", err)
-	}
-
-	links := getLinks(node)
-
-	for _, link := range linkMap {
-		if !contains(links, link) {
-			t.Errorf("Expected to find link %v", link)
-		}
+	parsed := parseLinks(links, HOST_URL)
+	if len(parsed) != 4 {
+		t.Logf("Unexpected number of links, expected 4, got %d", len(parsed))
+		t.Fail()
 	}
 }
 
